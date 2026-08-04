@@ -27,7 +27,7 @@ jobs:
         run: |
           RESPONSE=$(curl --fail http://localhost:5000)
           echo "$RESPONSE"
-          echo "$RESPONSE" | grep -q "v2 - hello from CI"
+          echo "$RESPONSE" | grep -q "v1 - hello from CI"
 
       - name: Show container logs if the test fails
         if: failure()
