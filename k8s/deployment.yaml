@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: cicd-app
-        image: cicd-app:v1
+        image: reemahmad11/cicd-app:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
