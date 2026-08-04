@@ -1,4 +1,4 @@
-name: CI - Build and Test
+name: CI - Build, Test and Push
 
 on:
   push:
@@ -7,14 +7,14 @@ on:
   pull_request:
 
 jobs:
-  build-and-test:
+  build-test-push:
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Build Docker image for testing
         run: docker build -t cicd-app:test .
 
       - name: Start Docker container
@@ -29,10 +29,27 @@ jobs:
           echo "$RESPONSE"
           echo "$RESPONSE" | grep -q "v1 - hello from CI"
 
-      - name: Show container logs if the test fails
+      - name: Show container logs if test fails
         if: failure()
         run: docker logs cicd-test
 
       - name: Remove test container
         if: always()
         run: docker rm -f cicd-test
+
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            reemahmad11/cicd-app:latest
+            reemahmad11/cicd-app:${{ github.sha }}
