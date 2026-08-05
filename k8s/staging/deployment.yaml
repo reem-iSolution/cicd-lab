@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicd-app
+  namespace: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cicd-app
+  template:
+    metadata:
+      labels:
+        app: cicd-app
+        environment: staging
+    spec:
+      containers:
+        - name: cicd-app
+          image: reemahmad11/cicd-app:5d74f17bbd254ce396515f55e300dd92149d35a3
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: ENVIRONMENT
+              value: staging
