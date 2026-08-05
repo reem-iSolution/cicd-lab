@@ -204,7 +204,7 @@ jobs:
             -ContentType "application/json" `
             -Body $body
 
-    notify-failure:
+  notify-failure:
     if: >-
       ${{
         always() &&
