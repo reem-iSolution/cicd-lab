@@ -135,6 +135,57 @@ jobs:
             -n prod `
             -o jsonpath="{.spec.template.spec.containers[0].image}"
 
+      - name: Post-deployment smoke test and automatic rollback
+        shell: powershell
+        run: |
+          $portForward = $null
+
+          try {
+            $portForward = Start-Process `
+              -FilePath "kubectl" `
+              -ArgumentList @(
+                "port-forward",
+                "service/cicd-app-service",
+                "8082:80",
+                "-n",
+                "prod"
+              ) `
+              -PassThru `
+              -WindowStyle Hidden
+
+            Start-Sleep -Seconds 5
+
+            $response = Invoke-WebRequest `
+              -Uri "http://127.0.0.1:8082/health" `
+              -UseBasicParsing `
+              -TimeoutSec 15
+
+            Write-Host $response.Content
+
+            if ($response.Content -notmatch "v2 - hello from CI") {
+              throw "Expected version string was not returned by production."
+            }
+
+            Write-Host "Post-deployment smoke test passed."
+          }
+          catch {
+            Write-Host "Post-deployment smoke test failed."
+            Write-Host $_
+
+            kubectl rollout undo deployment/cicd-app -n prod
+
+            kubectl rollout status deployment/cicd-app `
+              -n prod `
+              --timeout=180s
+
+            throw "Production failed verification and was rolled back."
+          }
+          finally {
+            if ($null -ne $portForward -and -not $portForward.HasExited) {
+              Stop-Process -Id $portForward.Id -Force
+            }
+          }
+
       - name: Notify Discord on Production Success
         shell: powershell
         env:
