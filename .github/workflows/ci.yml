@@ -135,62 +135,6 @@ jobs:
             -n prod `
             -o jsonpath="{.spec.template.spec.containers[0].image}"
 
-      - name: Notify Discord on Production Success
-        shell: powershell
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          REPOSITORY: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
-          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          $body = @{
-            content = "Production deployment succeeded.`nRepository: $env:REPOSITORY`nCommit: $env:COMMIT_SHA`nRun: $env:RUN_URL"
-          } | ConvertTo-Json
-
-          Invoke-RestMethod `
-            -Uri $env:DISCORD_WEBHOOK `
-            -Method Post `
-            -ContentType "application/json" `
-            -Body $body
-
-  notify-failure:
-    if: failure()
-    needs:
-      - build-test-push
-      - deploy-staging
-      -   deploy-production:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: deploy-staging
-
-    runs-on:
-      - self-hosted
-      - windows
-      - x64
-
-    environment: production
-
-    steps:
-      - name: Check out the code
-        uses: actions/checkout@v4
-
-      - name: Deploy commit image to production
-        shell: powershell
-        run: |
-          kubectl set image deployment/cicd-app `
-            cicd-app=reemahmad11/cicd-app:${{ github.sha }} `
-            -n prod
-
-          kubectl rollout status deployment/cicd-app `
-            -n prod `
-            --timeout=180s
-
-      - name: Show production image
-        shell: powershell
-        run: |
-          kubectl get deployment cicd-app `
-            -n prod `
-            -o jsonpath="{.spec.template.spec.containers[0].image}"
-
       - name: Post-deployment smoke test and automatic rollback
         shell: powershell
         run: |
@@ -229,9 +173,12 @@ jobs:
             Write-Host $_
 
             kubectl rollout undo deployment/cicd-app -n prod
-            kubectl rollout status deployment/cicd-app -n prod --timeout=180s
 
-            throw "Production deployment failed verification and was rolled back."
+            kubectl rollout status deployment/cicd-app `
+              -n prod `
+              --timeout=180s
+
+            throw "Production failed verification and was rolled back."
           }
           finally {
             if ($null -ne $portForward -and -not $portForward.HasExited) {
@@ -256,6 +203,13 @@ jobs:
             -Method Post `
             -ContentType "application/json" `
             -Body $body
+
+  notify-failure:
+    if: failure()
+    needs:
+      - build-test-push
+      - deploy-staging
+      - deploy-production
 
     runs-on: ubuntu-latest
 
