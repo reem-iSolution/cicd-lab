@@ -1,5 +1,220 @@
+name: CI - Build, Test, Push and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Check pinned base image tag
+        shell: bash
+        run: |
+          if grep -Eiq '^FROM[[:space:]]+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
+            echo "Error: Dockerfile must not use :latest as the base image tag."
+            exit 1
+          fi
+
+          if grep -Eiq '^FROM[[:space:]]+[^[:space:]:]+([[:space:]]|$)' Dockerfile; then
+            echo "Error: Dockerfile base image must include a pinned tag."
+            exit 1
+          fi
+
+          echo "Dockerfile uses a pinned base image tag."
+
+      - name: Build Docker image for testing
+        run: docker build -t cicd-app:test .
+
+      - name: Start Docker container
+        run: docker run -d --name cicd-test -p 5000:5000 cicd-app:test
+
+      - name: Wait for the application
+        run: sleep 5
+
+      - name: Run smoke test
+        run: |
+          RESPONSE=$(curl --fail http://localhost:5000)
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q "v2 - hello from CI"
+
+      - name: Show container logs if test fails
+        if: failure()
+        run: docker logs cicd-test
+
+      - name: Remove test container
+        if: always()
+        run: docker rm -f cicd-test
+
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            reemahmad11/cicd-app:latest
+            reemahmad11/cicd-app:${{ github.sha }}
+
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test-push
+
+    runs-on:
+      - self-hosted
+      - windows
+      - x64
+
+    environment: staging
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Deploy commit image to staging
+        shell: powershell
+        run: |
+          kubectl set image deployment/cicd-app `
+            cicd-app=reemahmad11/cicd-app:${{ github.sha }} `
+            -n staging
+
+          kubectl rollout status deployment/cicd-app `
+            -n staging `
+            --timeout=180s
+
+      - name: Show staging image
+        shell: powershell
+        run: |
+          kubectl get deployment cicd-app `
+            -n staging `
+            -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+  deploy-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: deploy-staging
+
+    runs-on:
+      - self-hosted
+      - windows
+      - x64
+
+    environment: production
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Deploy commit image to production
+        shell: powershell
+        run: |
+          kubectl set image deployment/cicd-app `
+            cicd-app=reemahmad11/cicd-app:${{ github.sha }} `
+            -n prod
+
+          kubectl rollout status deployment/cicd-app `
+            -n prod `
+            --timeout=180s
+
+      - name: Show production image
+        shell: powershell
+        run: |
+          kubectl get deployment cicd-app `
+            -n prod `
+            -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+      - name: Post-deployment smoke test and automatic rollback
+        shell: powershell
+        run: |
+          $portForward = $null
+
+          try {
+            $portForward = Start-Process `
+              -FilePath "kubectl" `
+              -ArgumentList @(
+                "port-forward",
+                "service/cicd-app-service",
+                "8082:80",
+                "-n",
+                "prod"
+              ) `
+              -PassThru `
+              -WindowStyle Hidden
+
+            Start-Sleep -Seconds 5
+
+            $response = Invoke-WebRequest `
+              -Uri "http://127.0.0.1:8082/health" `
+              -UseBasicParsing `
+              -TimeoutSec 15
+
+            Write-Host $response.Content
+
+            if ($response.Content -notmatch "v2 - hello from CI") {
+              throw "Expected version string was not returned by production."
+            }
+
+            Write-Host "Post-deployment smoke test passed."
+          }
+          catch {
+            Write-Host "Post-deployment smoke test failed."
+            Write-Host $_
+
+            kubectl rollout undo deployment/cicd-app -n prod
+
+            kubectl rollout status deployment/cicd-app `
+              -n prod `
+              --timeout=180s
+
+            throw "Production failed verification and was rolled back."
+          }
+          finally {
+            if ($null -ne $portForward -and -not $portForward.HasExited) {
+              Stop-Process -Id $portForward.Id -Force
+            }
+          }
+
+      - name: Notify Discord on Production Success
+        shell: powershell
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $body = @{
+            content = "Production deployment succeeded.`nRepository: $env:REPOSITORY`nCommit: $env:COMMIT_SHA`nRun: $env:RUN_URL"
+          } | ConvertTo-Json
+
+          Invoke-RestMethod `
+            -Uri $env:DISCORD_WEBHOOK `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body $body
+
   notify-failure:
-    if: failure()
+    if: >-
+      ${{
+        always() &&
+        (
+          needs.build-test-push.result == 'failure' ||
+          needs.deploy-staging.result == 'failure' ||
+          needs.deploy-production.result == 'failure'
+        )
+      }}
+
     needs:
       - build-test-push
       - deploy-staging
@@ -14,14 +229,33 @@
           REPOSITORY: ${{ github.repository }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_RESULT: ${{ needs.build-test-push.result }}
+          STAGING_RESULT: ${{ needs.deploy-staging.result }}
+          PRODUCTION_RESULT: ${{ needs.deploy-production.result }}
+
         run: |
+          payload=$(jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg commit "$COMMIT_SHA" \
+            --arg run "$RUN_URL" \
+            --arg build "$BUILD_RESULT" \
+            --arg staging "$STAGING_RESULT" \
+            --arg production "$PRODUCTION_RESULT" \
+            '{
+              content: (
+                "❌ Pipeline FAILED\n" +
+                "Repository: " + $repository + "\n" +
+                "Commit: " + $commit + "\n" +
+                "Build: " + $build + "\n" +
+                "Staging: " + $staging + "\n" +
+                "Production: " + $production + "\n" +
+                "Run: " + $run
+              )
+            }')
+
           curl --fail-with-body \
             -H "Content-Type: application/json" \
             -H "User-Agent: GitHub-Actions" \
             -X POST \
-            --data "$(jq -n \
-              --arg repository "$REPOSITORY" \
-              --arg commit "$COMMIT_SHA" \
-              --arg run "$RUN_URL" \
-              '{content: ("❌ Pipeline FAILED\nRepository: " + $repository + "\nCommit: " + $commit + "\nRun: " + $run)}')" \
+            -d "$payload" \
             "$DISCORD_WEBHOOK"
