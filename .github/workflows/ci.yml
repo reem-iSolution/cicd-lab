@@ -14,6 +14,21 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v4
 
+      - name: Check pinned base image tag
+        shell: bash
+        run: |
+          if grep -Eiq '^FROM[[:space:]]+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
+            echo "Error: Dockerfile must not use :latest as the base image tag."
+            exit 1
+          fi
+
+          if grep -Eiq '^FROM[[:space:]]+[^[:space:]:]+([[:space:]]|$)' Dockerfile; then
+            echo "Error: Dockerfile base image must include a pinned tag."
+            exit 1
+          fi
+
+          echo "Dockerfile uses a pinned base image tag."
+
       - name: Build Docker image for testing
         run: docker build -t cicd-app:test .
 
