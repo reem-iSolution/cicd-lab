@@ -124,3 +124,27 @@ jobs:
         run: |
           kubectl get deployment cicd-app -n prod `
             -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+      - name: Notify Discord on Production Success
+        shell: bash
+        run: |
+          curl -H "Content-Type: application/json" \
+          -X POST \
+          -d "{\"content\":\"✅ Production deployment succeeded\nRepository: ${{ github.repository }}\nCommit: ${{ github.sha }}\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+  notify-failure:
+    if: failure()
+    needs:
+      - build-test-push
+      - deploy-staging
+      - deploy-production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Discord failure notification
+        run: |
+          curl -H "Content-Type: application/json" \
+          -X POST \
+          -d "{\"content\":\"❌ Pipeline FAILED\nRepository: ${{ github.repository }}\nCommit: ${{ github.sha }}\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+          ${{ secrets.DISCORD_WEBHOOK }}
