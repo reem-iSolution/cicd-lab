@@ -205,7 +205,16 @@ jobs:
             -Body $body
 
   notify-failure:
-    if: failure()
+    if: >-
+      ${{
+        always() &&
+        (
+          needs.build-test-push.result == 'failure' ||
+          needs.deploy-staging.result == 'failure' ||
+          needs.deploy-production.result == 'failure'
+        )
+      }}
+
     needs:
       - build-test-push
       - deploy-staging
@@ -220,28 +229,33 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_RESULT: ${{ needs.build-test-push.result }}
+          STAGING_RESULT: ${{ needs.deploy-staging.result }}
+          PRODUCTION_RESULT: ${{ needs.deploy-production.result }}
+
         run: |
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          payload = {
-              "content": (
-                  "Pipeline FAILED\n"
-                  f"Repository: {os.environ['REPOSITORY']}\n"
-                  f"Commit: {os.environ['COMMIT_SHA']}\n"
-                  f"Run: {os.environ['RUN_URL']}"
+          payload=$(jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg commit "$COMMIT_SHA" \
+            --arg run "$RUN_URL" \
+            --arg build "$BUILD_RESULT" \
+            --arg staging "$STAGING_RESULT" \
+            --arg production "$PRODUCTION_RESULT" \
+            '{
+              content: (
+                "❌ Pipeline FAILED\n" +
+                "Repository: " + $repository + "\n" +
+                "Commit: " + $commit + "\n" +
+                "Build: " + $build + "\n" +
+                "Staging: " + $staging + "\n" +
+                "Production: " + $production + "\n" +
+                "Run: " + $run
               )
-          }
+            }')
 
-          request = urllib.request.Request(
-              os.environ["DISCORD_WEBHOOK"],
-              data=json.dumps(payload).encode("utf-8"),
-              headers={"Content-Type": "application/json"},
-              method="POST",
-          )
-
-          with urllib.request.urlopen(request) as response:
-              print(f"Discord notification status: {response.status}")
-          PY
+          curl --fail-with-body \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHub-Actions" \
+            -X POST \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK"
