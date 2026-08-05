@@ -126,12 +126,22 @@ jobs:
             -o jsonpath="{.spec.template.spec.containers[0].image}"
 
       - name: Notify Discord on Production Success
-        shell: bash
+        shell: powershell
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -H "Content-Type: application/json" \
-          -X POST \
-          -d "{\"content\":\"✅ Production deployment succeeded\nRepository: ${{ github.repository }}\nCommit: ${{ github.sha }}\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
-          ${{ secrets.DISCORD_WEBHOOK }}
+          $body = @{
+            content = "✅ Production deployment succeeded`nRepository: $env:REPOSITORY`nCommit: $env:COMMIT_SHA`nRun: $env:RUN_URL"
+          } | ConvertTo-Json
+
+          Invoke-RestMethod `
+            -Uri $env:DISCORD_WEBHOOK `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body $body
 
   notify-failure:
     if: failure()
