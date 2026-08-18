@@ -2,11 +2,14 @@ apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: cicd-app
+
 spec:
   replicas: 5
+
   selector:
     matchLabels:
       app: cicd-app
+
   template:
     metadata:
       labels:
@@ -20,16 +23,20 @@ spec:
             - containerPort: 5000
 
   strategy:
-  canary:
-    steps:
-      - setWeight: 20
-      - analysis:
-          templates:
-            - templateName: cicd-app-analysis
-      - pause: {}
-      - setWeight: 50
-      - analysis:
-          templates:
-            - templateName: cicd-app-analysis
-      - pause: {}
-      - setWeight: 100
+    canary:
+      steps:
+        - setWeight: 20
+        - analysis:
+            templates:
+              - templateName: cicd-app-analysis
+
+        - pause: {}
+
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: cicd-app-analysis
+
+        - pause: {}
+
+        - setWeight: 100
