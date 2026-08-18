@@ -6,4 +6,16 @@ resources:
 
 namespace: staging
 
-nameSuffix: -staging
+patches:
+  - target:
+      kind: Deployment
+      name: cicd-app
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/labels/environment
+        value: staging
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: ENVIRONMENT
+            value: staging

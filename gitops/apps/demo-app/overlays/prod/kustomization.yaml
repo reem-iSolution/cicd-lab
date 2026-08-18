@@ -6,4 +6,16 @@ resources:
 
 namespace: prod
 
-nameSuffix: -prod
+patches:
+  - target:
+      kind: Deployment
+      name: cicd-app
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/labels/environment
+        value: production
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: ENVIRONMENT
+            value: production
