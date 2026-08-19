@@ -13,7 +13,7 @@ spec:
         prometheus:
           address: http://prometheus-server.monitoring.svc.cluster.local
           query: |
-            vector(0)
+            max(app_error_rate)
 
     - name: p99-latency
       interval: 10s
@@ -24,4 +24,4 @@ spec:
         prometheus:
           address: http://prometheus-server.monitoring.svc.cluster.local
           query: |
-            vector(0)
+            max(app_p99_latency_seconds)

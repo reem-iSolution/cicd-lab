@@ -14,10 +14,15 @@ spec:
     metadata:
       labels:
         app: cicd-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "5000"
+
     spec:
       containers:
         - name: cicd-app
-          image: reemahmad11/cicd-app:broken
+          image: reemahmad11/cicd-app:metrics-good
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
