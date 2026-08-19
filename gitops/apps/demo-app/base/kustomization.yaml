@@ -5,3 +5,5 @@ resources:
   - deployment.yaml
   - service.yaml
   - analysis-template.yaml
+  - secret-store.yaml
+  - external-secret.yaml
