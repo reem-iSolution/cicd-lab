@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: cicd-app
-          image: reemahmad11/cicd-app:metrics-good
+          image: reemahmad11/cicd-app:metrics-broken
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
