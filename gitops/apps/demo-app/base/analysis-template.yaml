@@ -5,8 +5,8 @@ metadata:
 spec:
   metrics:
     - name: error-rate
-      interval: 10s
-      count: 1
+      interval: 15s
+      count: 3
       failureLimit: 1
       successCondition: result[0] < 0.05
       provider:
@@ -16,8 +16,8 @@ spec:
             max(app_error_rate)
 
     - name: p99-latency
-      interval: 10s
-      count: 1
+      interval: 15s
+      count: 3
       failureLimit: 1
       successCondition: result[0] < 1
       provider:
