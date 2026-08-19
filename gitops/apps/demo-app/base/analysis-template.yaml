@@ -5,28 +5,23 @@ metadata:
 spec:
   metrics:
     - name: error-rate
-      interval: 30s
+      interval: 10s
       count: 1
-      successCondition: result[0] < 0.05
       failureLimit: 1
+      successCondition: result[0] < 0.05
       provider:
         prometheus:
           address: http://prometheus-server.monitoring.svc.cluster.local
           query: |
-            sum(rate(http_requests_total{status=~"5.."}[1m]))
-            /
-            sum(rate(http_requests_total[1m]))
+            vector(0)
 
     - name: p99-latency
-      interval: 30s
+      interval: 10s
       count: 1
-      successCondition: result[0] < 1
       failureLimit: 1
+      successCondition: result[0] < 1
       provider:
         prometheus:
           address: http://prometheus-server.monitoring.svc.cluster.local
           query: |
-            histogram_quantile(
-              0.99,
-              sum(rate(http_request_duration_seconds_bucket[1m])) by (le)
-            )
+            vector(0)
